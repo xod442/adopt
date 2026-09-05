@@ -1,0 +1,14 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.db
+*.db-journal
+.env
+.pytest_cache/
+.git/
+.DS_Store
+tests/
+mock/
+README.md
+CLAUDE.md

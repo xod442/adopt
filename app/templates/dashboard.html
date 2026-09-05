@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · ADOPT{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <h1>Adopt CX Switches</h1>
+</div>
+
+<p class="muted" style="margin-top:-10px">
+  Enter the Mist org and AOS-CX credentials below, plus the switches to adopt.
+  ADOPT will pull one Mist adoption code per switch, then push each code
+  straight to its switch and save it to startup-config.
+</p>
+
+{% if error %}
+<div class="alert error">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="{{ rp }}/adopt" class="card">
+  <h2>Mist org</h2>
+  <div class="field-grid">
+    <label>Mist API host
+      <input type="text" name="mist_host" value="{{ mist_host }}" placeholder="api.mist.com" required>
+      <span class="hint">Use your region's host, e.g. api.eu.mist.com.</span>
+    </label>
+    <label>Org ID
+      <input type="text" name="org_id" value="{{ org_id or '' }}" placeholder="00000000-0000-0000-0000-000000000000" required>
+    </label>
+    <label class="full">Mist API token
+      <input type="password" name="mist_token" placeholder="Mist org API token" required autocomplete="off">
+      <span class="hint">Used only for this run — never stored.</span>
+    </label>
+  </div>
+
+  <h2 style="margin-top:24px">AOS-CX switch credentials</h2>
+  <div class="field-grid">
+    <label>Username
+      <input type="text" name="cx_username" value="{{ cx_username or '' }}" placeholder="admin" required autocomplete="off">
+    </label>
+    <label>Password
+      <input type="password" name="cx_password" placeholder="Switch admin password" required autocomplete="off">
+      <span class="hint">Used only for this run — never stored.</span>
+    </label>
+  </div>
+
+  <h2 style="margin-top:24px">Switches to adopt</h2>
+  <label class="full">Switch IP addresses
+    <textarea class="ip-list" name="switch_ips" placeholder="10.0.0.11&#10;10.0.0.12&#10;10.0.0.13" required>{{ switch_ips or '' }}</textarea>
+    <span class="hint">One IP per line (or comma-separated). One Mist adoption code will be requested per switch.</span>
+  </label>
+
+  <div class="form-actions">
+    <button class="btn" type="submit">Adopt</button>
+  </div>
+</form>
+
+{% endblock %}

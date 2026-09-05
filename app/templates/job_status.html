@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Job #{{ job.id }} · ADOPT{% endblock %}
+{% block content %}
+
+<div class="job-head">
+  <div>
+    <a class="back" href="{{ rp }}/">&larr; New run</a>
+    <h1 style="margin:0">Adoption run #{{ job.id }}</h1>
+    <p class="job-summary">
+      Org {{ job.org_id }} on {{ job.mist_host }} &middot; {{ job.switch_count }} switch{{ '' if job.switch_count == 1 else 'es' }}
+    </p>
+  </div>
+  <span id="job-status-badge" class="status-badge status-{{ job.status }}">{{ job.status|replace('_', ' ') }}</span>
+</div>
+
+<div id="job-error" class="alert error" style="display:none"></div>
+
+<div class="card">
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th>Switch IP</th>
+        <th>Status</th>
+        <th>Adoption code</th>
+        <th>Detail</th>
+      </tr>
+    </thead>
+    <tbody id="switch-rows">
+      {% for s in job.switches|sort(attribute='order_index') %}
+      <tr data-ip="{{ s.ip }}">
+        <td>{{ s.ip }}</td>
+        <td><span class="status-badge status-{{ s.status }}">{{ s.status }}</span></td>
+        <td><code class="copy-input" style="padding:2px 6px">{{ s.claim_code_used or '—' }}</code></td>
+        <td class="muted">{{ s.message or '' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const jobId = {{ job.id }};
+  const rp = {{ rp|tojson }};
+  const terminal = new Set(["complete", "complete_with_errors", "failed"]);
+  const badge = document.getElementById("job-status-badge");
+  const errorBox = document.getElementById("job-error");
+
+  function statusBadge(status) {
+    const span = document.createElement("span");
+    span.className = "status-badge status-" + status;
+    span.textContent = status.replace(/_/g, " ");
+    return span;
+  }
+
+  function render(data) {
+    badge.className = "status-badge status-" + data.status;
+    badge.textContent = data.status.replace(/_/g, " ");
+
+    if (data.error_message) {
+      errorBox.style.display = "block";
+      errorBox.textContent = data.error_message;
+    }
+
+    data.switches.forEach(function (sw) {
+      const row = document.querySelector('tr[data-ip="' + CSS.escape(sw.ip) + '"]');
+      if (!row) return;
+      const cells = row.querySelectorAll("td");
+      cells[1].innerHTML = "";
+      cells[1].appendChild(statusBadge(sw.status));
+      cells[2].textContent = sw.claim_code_used || "—";
+      cells[3].textContent = sw.message || "";
+    });
+
+    if (!terminal.has(data.status)) {
+      setTimeout(poll, 1500);
+    }
+  }
+
+  function poll() {
+    fetch(rp + "/jobs/" + jobId + "/data")
+      .then(function (r) { return r.json(); })
+      .then(render)
+      .catch(function () { setTimeout(poll, 3000); });
+  }
+
+  poll();
+})();
+</script>
+{% endblock %}

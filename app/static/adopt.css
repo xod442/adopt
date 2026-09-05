@@ -1,0 +1,24 @@
+/* ADOPT-specific additions on top of the shared style.css tokens
+   (see /Users/americaskauffmari/opt/holo/DESIGN.md for the token reference). */
+
+.field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 24px; }
+.field-grid .full { grid-column: 1 / -1; }
+@media (max-width: 720px) { .field-grid { grid-template-columns: 1fr; } }
+
+textarea.ip-list { min-height: 160px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; resize: vertical; }
+
+.form-actions { margin-top: 22px; display: flex; align-items: center; gap: 14px; }
+
+/* ---- switch adoption status pills ---- */
+.status-badge.status-pending { background: var(--surface2); color: var(--muted); }
+.status-badge.status-adopting { background: rgba(59, 130, 246, .2); color: #7db1ff; }
+.status-badge.status-success { background: var(--success-bg); color: var(--hpe-green-dark); }
+.status-badge.status-failed { background: var(--danger-bg); color: #ffb4b4; }
+
+.status-badge.status-collecting_codes,
+.status-badge.status-pushing { background: rgba(59, 130, 246, .2); color: #7db1ff; }
+.status-badge.status-complete { background: var(--success-bg); color: var(--hpe-green-dark); }
+.status-badge.status-complete_with_errors { background: rgba(245, 158, 11, .22); color: #f5b13c; }
+
+.job-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+.job-summary { color: var(--muted); font-size: .88rem; margin: 4px 0 0; }
