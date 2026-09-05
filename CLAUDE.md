@@ -33,5 +33,34 @@ hardware before this goes to production.
   before bumping `ADOPT_AOSCX_API_VERSION`.
 
 ## Git
-- New app, not yet pushed anywhere. Follow the same rules as opal/holo when
-  it is: commit only when asked, exclude `*.db`/`.env`/`.venv`/`data/`.
+- Public repo: github.com/xod442/adopt (main). Commit only when Rick says
+  so, same rules as opal/holo: exclude `*.db`/`.env`/`.venv`/`data/`, and
+  never hardcode internal/beta hostnames into committed defaults (see
+  "Mist public GA timing" below) — this repo is public.
+
+## Mist public GA timing (as of 2026-09-05)
+Mist's **public** cloud API doesn't return CX adoption codes yet — that's
+landing ~Sept 9, 2026. Rick currently has access to an **internal/beta**
+Mist server that already supports it, confirmed to use the same endpoint
+path and response shape this app already codes against (same
+`/api/v1/orgs/{org_id}/inventory`, same `claim_code` field, same
+`Authorization: Token <token>` header, plain HTTPS, no special port/TLS
+handling needed) — just a different hostname.
+
+Because of that, **no code change should be needed** to use the internal
+server today: the dashboard's "Mist API host" field (`app/config.py`'s
+`DEFAULT_MIST_HOST` / env var `ADOPT_MIST_HOST`) is already free-text, not
+hardcoded to `api.mist.com`, and `app/mist_client.py` builds `https://{host}`
+from whatever host is given. Rick was going to test this Monday
+(2026-09-08) by typing the internal hostname into that field.
+
+If Monday's test surfaces a real difference (e.g. a different field name,
+an extra required header, pagination that behaves differently, etc.),
+that's the first place to look — update `app/mist_client.py`'s
+`fetch_cx_adoption_codes()` accordingly, and re-run
+`pytest tests/test_mist_client.py` after updating `mock/mock_mist.py` to
+match the corrected contract. Do **not** hardcode the internal hostname
+anywhere committed (config default, `.env.example`, docs) — it's internal
+infrastructure and this repo is public; Rick should only set it in his own
+gitignored `.env` (`ADOPT_MIST_HOST=...`) or type it into the dashboard
+field per-run.

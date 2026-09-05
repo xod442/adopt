@@ -4,6 +4,17 @@ A no-login dashboard for bulk-adopting HPE Aruba **AOS-CX** switches into
 Mist, following the sibling apps' Docker/FastAPI pattern (see `holo`,
 `focus`, `vista`, `opal`, `opal-mist`).
 
+> **Status (2026-09-05):** Mist's *public* cloud API doesn't return CX
+> adoption codes yet — that's expected ~September 9, 2026. Until then, this
+> only works against an internal/beta Mist server. The "Mist API host" field
+> below is plain text for exactly this reason — point it at your
+> internal/beta hostname (or set `ADOPT_MIST_HOST` in your own gitignored
+> `.env`) rather than `api.mist.com`. No code change should be required
+> once GA lands, since the internal server was confirmed to use the same
+> endpoint, response shape, and auth header this app already codes against
+> — see `CLAUDE.md` for the full note and what to check if that turns out
+> not to be true.
+
 ## What it does
 
 1. You fill in a Mist org, AOS-CX admin credentials, and a list of switch IP
