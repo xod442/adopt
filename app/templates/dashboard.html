@@ -45,8 +45,14 @@
 
   <h2 style="margin-top:24px">Switches to adopt</h2>
   <label class="full">Switch IP addresses
-    <textarea class="ip-list" name="switch_ips" placeholder="10.0.0.11&#10;10.0.0.12&#10;10.0.0.13" required>{{ switch_ips or '' }}</textarea>
+    <textarea class="ip-list" id="switch-ips" name="switch_ips" placeholder="10.0.0.11&#10;10.0.0.12&#10;10.0.0.13" required>{{ switch_ips or '' }}</textarea>
     <span class="hint">One IP per line (or comma-separated). One Mist adoption code will be requested per switch.</span>
+  </label>
+  <label class="full">Or upload a file of switch IPs
+    <input type="file" id="ip-file-upload" accept=".txt,.csv">
+    <span class="hint">A plain text or CSV file with one IP per line (or comma-separated) — replaces whatever is in the box above. Handy for bulk lists (e.g. 100 switches) instead of typing them all in.
+      <a href="{{ rp }}/assets/sample_switches.txt" download>Download a sample file</a> to see the expected format.</span>
+    <span class="hint" id="ip-file-feedback"></span>
   </label>
 
   <div class="form-actions">
@@ -54,4 +60,37 @@
   </div>
 </form>
 
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const fileInput = document.getElementById("ip-file-upload");
+  const textarea = document.getElementById("switch-ips");
+  const feedback = document.getElementById("ip-file-feedback");
+
+  fileInput.addEventListener("change", function () {
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function (e) {
+      const text = e.target.result;
+      textarea.value = text;
+
+      // Same parsing rule as the server (main.py's _parse_ips): split on
+      // newlines/commas, dedupe, drop blanks — just for a quick IP count.
+      const seen = new Set();
+      text.replace(/,/g, "\n").split("\n").forEach(function (line) {
+        const ip = line.trim();
+        if (ip) seen.add(ip);
+      });
+      feedback.textContent = "Loaded " + seen.size + " switch IP(s) from " + file.name + ".";
+    };
+    reader.onerror = function () {
+      feedback.textContent = "Could not read " + file.name + " — try again or paste the IPs directly.";
+    };
+    reader.readAsText(file);
+  });
+})();
+</script>
 {% endblock %}

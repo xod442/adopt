@@ -15,36 +15,39 @@
 
 <div id="job-error" class="alert error" style="display:none"></div>
 
-<div id="failed-switches-summary" class="card" style="{{ 'display:none' if not job.switches|selectattr('status', 'equalto', 'failed')|list else '' }}">
-  <h2 style="margin-top:0">Failed switches (<span id="failed-count">{{ job.switches|selectattr('status', 'equalto', 'failed')|list|length }}</span>)</h2>
+{% set terminal_statuses = ["complete", "complete_with_errors", "failed"] %}
+{% set done_count = job.switches|selectattr('status', 'in', ['success', 'failed'])|list|length %}
+{% set success_count = job.switches|selectattr('status', 'equalto', 'success')|list|length %}
+{% set failed_count = job.switches|selectattr('status', 'equalto', 'failed')|list|length %}
+
+<div id="progress-section" class="card" style="{{ 'display:none' if job.status in terminal_statuses else '' }}">
+  <p class="progress-label" id="progress-label">
+    {% if job.status in ('pending', 'collecting_codes') %}
+      Collecting registration codes&hellip;
+    {% else %}
+      Processing switch {{ done_count }} of {{ job.switch_count }}&hellip;
+    {% endif %}
+  </p>
+  <div class="progress-bar">
+    <div id="progress-bar-fill" class="progress-bar-fill"
+         style="width: {{ (done_count / job.switch_count * 100) if job.switch_count else 0 }}%"></div>
+  </div>
+</div>
+
+<div id="run-summary-section" class="card" style="{{ '' if job.status in terminal_statuses else 'display:none' }}">
+  <p class="run-summary" id="run-summary-text">
+    {{ success_count }} succeeded, {{ failed_count }} failed.
+  </p>
+</div>
+
+<div id="failed-switches-summary" class="card"
+     style="{{ '' if job.status in terminal_statuses and failed_count else 'display:none' }}">
+  <h2 style="margin-top:0">Failed switches (<span id="failed-count">{{ failed_count }}</span>)</h2>
   <ul id="failed-list" style="margin:0; padding-left:20px">
     {% for s in job.switches|selectattr('status', 'equalto', 'failed')|sort(attribute='order_index') %}
     <li><strong>{{ s.ip }}</strong> — <span class="muted">{{ s.message or 'no detail' }}</span></li>
     {% endfor %}
   </ul>
-</div>
-
-<div class="card">
-  <table class="tbl">
-    <thead>
-      <tr>
-        <th>Switch IP</th>
-        <th>Status</th>
-        <th>Registration code</th>
-        <th>Detail</th>
-      </tr>
-    </thead>
-    <tbody id="switch-rows">
-      {% for s in job.switches|sort(attribute='order_index') %}
-      <tr data-ip="{{ s.ip }}">
-        <td>{{ s.ip }}</td>
-        <td><span class="status-badge status-{{ s.status }}">{{ s.status }}</span></td>
-        <td><code class="copy-input" style="padding:2px 6px">{{ s.registration_code_used or '—' }}</code></td>
-        <td class="muted">{{ s.message or '' }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
 </div>
 
 {% endblock %}
@@ -53,36 +56,47 @@
 (function () {
   const jobId = {{ job.id }};
   const rp = {{ rp|tojson }};
+  const switchCount = {{ job.switch_count }};
   const terminal = new Set(["complete", "complete_with_errors", "failed"]);
   const badge = document.getElementById("job-status-badge");
   const errorBox = document.getElementById("job-error");
+  const progressSection = document.getElementById("progress-section");
+  const progressLabel = document.getElementById("progress-label");
+  const progressFill = document.getElementById("progress-bar-fill");
+  const summarySection = document.getElementById("run-summary-section");
+  const summaryText = document.getElementById("run-summary-text");
   const failedSummary = document.getElementById("failed-switches-summary");
   const failedCount = document.getElementById("failed-count");
   const failedList = document.getElementById("failed-list");
 
-  function statusBadge(status) {
-    const span = document.createElement("span");
-    span.className = "status-badge status-" + status;
-    span.textContent = status.replace(/_/g, " ");
-    return span;
+  function renderProgress(data) {
+    const done = data.switches.filter(function (sw) {
+      return sw.status === "success" || sw.status === "failed";
+    }).length;
+    if (data.status === "pending" || data.status === "collecting_codes") {
+      progressLabel.textContent = "Collecting registration codes…";
+    } else {
+      progressLabel.textContent = "Processing switch " + done + " of " + switchCount + "…";
+    }
+    const pct = switchCount ? (done / switchCount * 100) : 0;
+    progressFill.style.width = pct + "%";
   }
 
-  function renderFailedSummary(switches) {
-    const failed = switches.filter(function (sw) { return sw.status === "failed"; });
-    failedCount.textContent = failed.length;
-    failedSummary.style.display = failed.length ? "" : "none";
+  function renderFailedList(switches) {
     failedList.innerHTML = "";
-    failed.forEach(function (sw) {
-      const li = document.createElement("li");
-      const strong = document.createElement("strong");
-      strong.textContent = sw.ip;
-      const span = document.createElement("span");
-      span.className = "muted";
-      span.textContent = " — " + (sw.message || "no detail");
-      li.appendChild(strong);
-      li.appendChild(span);
-      failedList.appendChild(li);
-    });
+    switches
+      .filter(function (sw) { return sw.status === "failed"; })
+      .forEach(function (sw) {
+        const li = document.createElement("li");
+        const strong = document.createElement("strong");
+        strong.textContent = sw.ip;
+        const span = document.createElement("span");
+        span.className = "muted";
+        span.textContent = " — " + (sw.message || "no detail");
+        li.appendChild(strong);
+        li.appendChild(span);
+        failedList.appendChild(li);
+      });
   }
 
   function render(data) {
@@ -94,19 +108,19 @@
       errorBox.textContent = data.error_message;
     }
 
-    data.switches.forEach(function (sw) {
-      const row = document.querySelector('tr[data-ip="' + CSS.escape(sw.ip) + '"]');
-      if (!row) return;
-      const cells = row.querySelectorAll("td");
-      cells[1].innerHTML = "";
-      cells[1].appendChild(statusBadge(sw.status));
-      cells[2].textContent = sw.registration_code_used || "—";
-      cells[3].textContent = sw.message || "";
-    });
+    const isTerminal = terminal.has(data.status);
+    const succeeded = data.switches.filter(function (sw) { return sw.status === "success"; }).length;
+    const failed = data.switches.filter(function (sw) { return sw.status === "failed"; }).length;
 
-    renderFailedSummary(data.switches);
-
-    if (!terminal.has(data.status)) {
+    if (isTerminal) {
+      progressSection.style.display = "none";
+      summarySection.style.display = "";
+      summaryText.textContent = succeeded + " succeeded, " + failed + " failed.";
+      failedCount.textContent = failed;
+      renderFailedList(data.switches);
+      failedSummary.style.display = failed ? "" : "none";
+    } else {
+      renderProgress(data);
       setTimeout(poll, 1500);
     }
   }
