@@ -4,9 +4,13 @@ without real hardware.
 Adapted from the login/session pattern in ../../aos-cx-lab/sim/main.py (same
 cookie + optional X-Csrf-Token flow pyaoscx's Session class expects), extended
 with:
-  - a `system.aruba_central` object (the field this app writes the Mist/CX
-    adoption code into — see app/cx_client.py for why the exact sub-field
-    name is a documented assumption, not a confirmed hardware fact)
+  - a `system/mist` resource (confirmed via live testing against real
+    hardware, 2026-09-09: PUT /rest/{version}/system/mist
+    {"registration_code": "..."} is how a switch is given a Mist
+    registration code — see app/cx_client.py. The official HPE AOS-CX
+    10.18.xxxx Fundamentals Guide's own curl example shows POST for this,
+    but that returned HTTP 405 from nginx on real hardware; PUT is what
+    actually works)
   - `fullconfigs/{name}` GET/PUT, enough to support pyaoscx's
     Configuration.create_checkpoint("running-config", "startup-config"),
     i.e. the "write memory" step.
@@ -59,14 +63,16 @@ def create_app(
         "software_info": {"build_id": "FL.10.09.1000"},
         "mgmt_intf_status": {"ip": "0.0.0.0", "default_gateway": ""},
         "capacities": {"max_vlans": 4094},
-        # Not a confirmed real schema — see app/cx_client.py docstring.
-        # Modeled loosely on how Mist/Central connectivity state is reported
-        # elsewhere in the object model (present/absent + a token field).
-        "aruba_central": {
-            "enabled": False,
-            "connected": False,
-            "activation_key": None,
-        },
+    }
+
+    # `system/mist` — modeled on the real `show mist` / GET .../system/mist
+    # output shown in the official HPE doc (registration_code, agent_status,
+    # connectivity_status, etc.); only the fields app/cx_client.py actually
+    # touches (registration_code) are meaningfully exercised here.
+    mist_info = {
+        "registration_code": None,
+        "agent_status": {"status": "ready", "reason": "agent is fully operational"},
+        "connectivity_status": {"status": "disconnected", "reason": "not registered"},
     }
 
     # fullconfigs store, used by the write-memory (checkpoint) step.
@@ -119,6 +125,24 @@ def create_app(
         system_info.update({k: v for k, v in body.items() if k in system_info})
         return system_info
 
+    # ═══════════════════════════════════════════════════════════════
+    # SYSTEM/MIST — Mist registration (see module docstring)
+    # ═══════════════════════════════════════════════════════════════
+    @app.get(f"{prefix}/system/mist")
+    async def get_system_mist(_: str = Depends(require_session)):
+        return mist_info
+
+    @app.put(f"{prefix}/system/mist")
+    async def set_system_mist(request: Request, _: str = Depends(require_session)):
+        body = await request.json()
+        if "registration_code" in body:
+            mist_info["registration_code"] = body["registration_code"]
+            mist_info["connectivity_status"] = {
+                "status": "connected",
+                "reason": "connected to the Mist Cloud",
+            }
+        return mist_info
+
     # pyaoscx.Device() calls this on construction to set self.firmware_version.
     @app.get(f"{prefix}/firmware")
     async def get_firmware(_: str = Depends(require_session)):
@@ -158,6 +182,7 @@ def create_app(
 
     # Expose mutable state for white-box test assertions.
     app.state.system_info = system_info
+    app.state.mist_info = mist_info
     app.state.fullconfigs = fullconfigs
 
     return app

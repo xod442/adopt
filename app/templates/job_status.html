@@ -21,7 +21,7 @@
       <tr>
         <th>Switch IP</th>
         <th>Status</th>
-        <th>Adoption code</th>
+        <th>Registration code</th>
         <th>Detail</th>
       </tr>
     </thead>
@@ -30,7 +30,7 @@
       <tr data-ip="{{ s.ip }}">
         <td>{{ s.ip }}</td>
         <td><span class="status-badge status-{{ s.status }}">{{ s.status }}</span></td>
-        <td><code class="copy-input" style="padding:2px 6px">{{ s.claim_code_used or '—' }}</code></td>
+        <td><code class="copy-input" style="padding:2px 6px">{{ s.registration_code_used or '—' }}</code></td>
         <td class="muted">{{ s.message or '' }}</td>
       </tr>
       {% endfor %}
@@ -70,7 +70,7 @@
       const cells = row.querySelectorAll("td");
       cells[1].innerHTML = "";
       cells[1].appendChild(statusBadge(sw.status));
-      cells[2].textContent = sw.claim_code_used || "—";
+      cells[2].textContent = sw.registration_code_used || "—";
       cells[3].textContent = sw.message || "";
     });
 

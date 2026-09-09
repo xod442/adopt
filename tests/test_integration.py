@@ -44,27 +44,20 @@ def test_full_adoption_run_succeeds_in_order(mock_mist, make_mock_switch):
     assert job.status == "complete", job.error_message
     results = sorted(job.switches, key=lambda s: s.order_index)
     assert [r.status for r in results] == ["success", "success", "success"]
-    # Codes are handed out in the order Mist returned them (CX-CLAIM-0001..03),
-    # to switches in dashboard list order.
-    assert [r.claim_code_used for r in results] == [
-        "CX-CLAIM-0001",
-        "CX-CLAIM-0002",
-        "CX-CLAIM-0003",
-    ]
+    # Each switch got a distinct, freshly-minted registration code.
+    codes_used = [r.registration_code_used for r in results]
+    assert len(set(codes_used)) == 3
     db.close()
 
-    for switch, expected_code in zip(switches, ["CX-CLAIM-0001", "CX-CLAIM-0002", "CX-CLAIM-0003"]):
-        info = switch.app.state.system_info
-        assert info["aruba_central"]["activation_key"] == expected_code
+    for switch, code in zip(switches, codes_used):
+        mist_info = switch.app.state.mist_info
+        assert mist_info["registration_code"] == code
         fullconfigs = switch.app.state.fullconfigs
         assert fullconfigs["startup-config"] == fullconfigs["running-config"]
 
 
-def test_insufficient_mist_codes_fails_without_pushing_anything(mock_mist, make_mock_switch):
-    import mock_mist as mist_module
-
-    # Mock inventory only has 3 eligible CX codes; ask for 4 switches.
-    switches = [make_mock_switch() for _ in range(4)]
+def test_mist_failure_fails_job_without_pushing_anything(mock_mist, make_mock_switch):
+    switches = [make_mock_switch() for _ in range(2)]
     switch_ips = [f"127.0.0.1:{s.port}" for s in switches]
 
     db = SessionLocal()
@@ -74,8 +67,8 @@ def test_insufficient_mist_codes_fails_without_pushing_anything(mock_mist, make_
     run_adoption_job(
         job_id,
         mist_host="unused",
-        org_id=mist_module.ORG_ID,
-        mist_token=mist_module.API_TOKEN,
+        org_id="wrong-org",
+        mist_token="wrong-token",
         cx_username="admin",
         cx_password="admin",
         mist_base_url_override=mock_mist.base_url,
@@ -85,10 +78,10 @@ def test_insufficient_mist_codes_fails_without_pushing_anything(mock_mist, make_
     db = SessionLocal()
     job = db.get(AdoptionJob, job_id)
     assert job.status == "failed"
-    assert "3" in job.error_message and "4" in job.error_message
+    assert "Mist API error" in job.error_message
     assert all(r.status == "pending" for r in job.switches)
     db.close()
 
     for switch in switches:
-        info = switch.app.state.system_info
-        assert info["aruba_central"]["activation_key"] is None
+        mist_info = switch.app.state.mist_info
+        assert mist_info["registration_code"] is None

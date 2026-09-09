@@ -1,12 +1,13 @@
 """Background orchestration for one adoption run.
 
 Flow (matches the requested design):
-  1. Collect exactly `len(ips)` CX adoption codes from Mist, store them in
-     the temp db (AdoptionCode rows). If Mist can't supply enough, the job
+  1. Collect exactly `len(ips)` fresh CX registration codes from Mist (one
+     GET per code — see app/mist_client.py), store them in the temp db
+     (AdoptionCode rows). If Mist fails to supply any one of them, the job
      fails here — nothing is pushed to any switch.
   2. For each switch IP (in dashboard list order), pop the oldest unconsumed
-     adoption code from the db and push it to that switch via pyaoscx, then
-     write memory. Switches are pushed concurrently (bounded by
+     registration code from the db and push it to that switch via pyaoscx,
+     then write memory. Switches are pushed concurrently (bounded by
      config.PUSH_CONCURRENCY) since each is an independent device.
 
 Credentials (Mist API token, AOS-CX username/password) are passed straight
@@ -61,7 +62,7 @@ def run_adoption_job(
         db.commit()
 
         try:
-            codes = mist_client.fetch_cx_adoption_codes(
+            codes = mist_client.fetch_cx_registration_codes(
                 host=mist_host,
                 org_id=org_id,
                 api_token=mist_token,
@@ -74,26 +75,8 @@ def run_adoption_job(
             db.commit()
             return
 
-        if len(codes) < switch_count:
-            job.status = "failed"
-            job.error_message = (
-                f"Only found {len(codes)} CX adoption code(s) in the Mist org "
-                f"inventory, but {switch_count} switch(es) were listed. No "
-                "codes were pushed to any switch."
-            )
-            db.commit()
-            return
-
-        for c in codes:
-            db.add(
-                AdoptionCode(
-                    job_id=job_id,
-                    claim_code=c["claim_code"],
-                    mac=c.get("mac"),
-                    serial=c.get("serial"),
-                    model=c.get("model"),
-                )
-            )
+        for code in codes:
+            db.add(AdoptionCode(job_id=job_id, registration_code=code))
         job.status = "pushing"
         db.commit()
     finally:
@@ -157,20 +140,20 @@ def _push_one(
             )
             if code_row is None:
                 switch.status = "failed"
-                switch.message = "No adoption code left to assign (this should not happen)"
+                switch.message = "No registration code left to assign (this should not happen)"
                 db.commit()
                 return
 
             code_row.consumed = True
-            switch.claim_code_used = code_row.claim_code
+            switch.registration_code_used = code_row.registration_code
             db.commit()
 
         try:
-            cx_client.push_adoption_code(
+            cx_client.push_registration_code(
                 ip=switch.ip,
                 username=cx_username,
                 password=cx_password,
-                claim_code=code_row.claim_code,
+                registration_code=code_row.registration_code,
                 api_version=cx_api_version,
                 scheme=cx_scheme,
             )
@@ -181,7 +164,7 @@ def _push_one(
             return
 
         switch.status = "success"
-        switch.message = "Adoption code written and saved to startup-config"
+        switch.message = "Registration code written and saved to startup-config"
         db.commit()
     except Exception as exc:  # belt-and-suspenders: never let a thread die silently
         logger.exception("Unexpected error adopting switch result %s", switch_result_id)

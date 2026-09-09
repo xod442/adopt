@@ -132,7 +132,7 @@ def create_app() -> FastAPI:
                     "ip": s.ip,
                     "status": s.status,
                     "message": s.message,
-                    "claim_code_used": s.claim_code_used,
+                    "registration_code_used": s.registration_code_used,
                 }
                 for s in sorted(job.switches, key=lambda s: s.order_index)
             ],

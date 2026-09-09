@@ -34,20 +34,19 @@ DEFAULT_AOSCX_API_VERSION = os.getenv("ADOPT_AOSCX_API_VERSION", "10.09")
 # Test-only escape hatch: talk plain http to a mock switch instead of https.
 CX_SCHEME = os.getenv("ADOPT_CX_SCHEME", "https")
 
-# Model-name prefixes treated as Juniper EX switches — Mist inventory can
-# return EX (Juniper) and CX (Aruba) devices side by side under type=switch,
-# and EX adoption codes are not valid for a CX switch. Adjust if your org
-# sees other Juniper switch families (e.g. QFX) mixed into the same org.
-EX_MODEL_PREFIXES = tuple(
-    p.strip().upper()
-    for p in os.getenv("ADOPT_EX_MODEL_PREFIXES", "EX,QFX").split(",")
-    if p.strip()
-)
+# Confirmed (2026-09-08, against the real Mist staging API + the official
+# HPE AOS-CX 10.18.xxxx Fundamentals Guide, "Mist onboarding" /
+# "Use case: brownfield onboarding"): a CX registration code is minted
+# per-switch by GET /api/v1/orgs/{org_id}/aoscx/register_cmd — a dedicated,
+# CX-only endpoint, so there is no more need to filter EX (Juniper) switches
+# out of a shared inventory listing the way earlier revisions of this app
+# assumed. See app/mist_client.py.
 
-# The exact AOS-CX `system.aruba_central` field that accepts the Mist/Central
-# claim (adoption) code has not been confirmed against real switch firmware
-# (see app/cx_client.py). Kept as a single override point.
-MIST_CLAIM_FIELD = os.getenv("ADOPT_MIST_CLAIM_FIELD", "activation_key")
+# Confirmed field AOS-CX expects the registration code in — live-tested as
+# PUT /rest/{version}/system/mist {"registration_code": "..."} (not POST,
+# despite the official HPE doc's own curl example — see app/cx_client.py).
+# Kept as an override point in case a future firmware revision changes this.
+MIST_REGISTRATION_FIELD = os.getenv("ADOPT_MIST_REGISTRATION_FIELD", "registration_code")
 
 # How many worker threads push codes to switches concurrently.
 PUSH_CONCURRENCY = int(os.getenv("ADOPT_PUSH_CONCURRENCY", "4"))

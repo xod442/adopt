@@ -44,16 +44,17 @@ class AdoptionJob(Base):
 
 
 class AdoptionCode(Base):
-    """A single-use CX adoption code fetched from the Mist org inventory."""
+    """A single-use AOS-CX Mist registration code, minted one-per-switch by
+    GET /orgs/{org_id}/aoscx/register_cmd (see app/mist_client.py). Unlike
+    the earlier (incorrect) inventory-based design, Mist does not associate
+    a freshly-minted code with any particular device/MAC/serial ahead of
+    time, so there is no per-device metadata to store here."""
 
     __tablename__ = "adoption_codes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     job_id: Mapped[int] = mapped_column(ForeignKey("adoption_jobs.id"))
-    claim_code: Mapped[str] = mapped_column(String(255))
-    mac: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    serial: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    registration_code: Mapped[str] = mapped_column(String(1024))
     consumed: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
@@ -71,7 +72,7 @@ class SwitchResult(Base):
     ip: Mapped[str] = mapped_column(String(64))
     # pending -> adopting -> success | failed
     status: Mapped[str] = mapped_column(String(32), default="pending")
-    claim_code_used: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    registration_code_used: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, default=_now, onupdate=_now

@@ -1,5 +1,5 @@
-"""AOS-CX switch client — pushes a Mist/CX adoption code to a switch and
-persists it ("write memory").
+"""AOS-CX switch client — pushes a Mist registration code to a switch
+("brownfield onboarding") and persists it ("write memory").
 
 Uses pyaoscx (the official Aruba AOS-CX Python SDK):
   - pyaoscx.session.Session for connection/version state, but with a
@@ -10,35 +10,49 @@ Uses pyaoscx (the official Aruba AOS-CX Python SDK):
     for the port when matching the login cookie's domain. `_login()` does
     the same POST-based cookie login Session.open()/Session.login() do,
     without either bug.
-  - A raw GET/PUT of `system?attributes=aruba_central` (via
-    session.request(), the same low-level call pyaoscx's own modules use)
-    rather than pyaoscx.device.Device — Device uses a process-global
-    Singleton metaclass, so the *first* Device(session) call in the process
-    permanently wins: every later call, for any other switch's session,
-    silently returns that same cached instance/session. That's fine for a
-    single device but wrong here, where several switches are pushed to
-    concurrently (see app/worker.py), so Device is not used at all.
-  - AOS-CX's REST API has no PATCH verb (confirmed in pyaoscx's own design
-    doc), so this is an attribute-scoped GET+PUT rather than a full-object
-    PUT, to avoid clobbering unrelated config.
+  - A raw PUT of `system/mist` (via session.request(), the same low-level
+    call pyaoscx's own modules use) rather than pyaoscx.device.Device —
+    Device uses a process-global Singleton metaclass, so the *first*
+    Device(session) call in the process permanently wins: every later call,
+    for any other switch's session, silently returns that same cached
+    instance/session. That's fine for a single device but wrong here, where
+    several switches are pushed to concurrently (see app/worker.py), so
+    Device is not used at all.
   - pyaoscx.configuration.Configuration.create_checkpoint("running-config",
     "startup-config") for "write memory" (copy running-config to
     startup-config), pyaoscx's real equivalent of that CLI command
     (Configuration, unlike Device, is a plain — not singleton — class).
 
-IMPORTANT / unconfirmed against real hardware: the exact field inside
-`system.aruba_central` that accepts a Mist/Central claim code has not been
-verified against real AOS-CX firmware (pyaoscx's SDK lists `aruba_central`
-as a read-only/reported attribute today, not one of its standard writable
-config attributes — this looks like newer, not-yet-publicly-documented
-functionality from the HPE Aruba/Mist convergence). This module:
-  1. GETs the switch's current `aruba_central` object and logs its keys.
-  2. Writes the code into config.MIST_CLAIM_FIELD (default "activation_key"),
-     a single override point (env var ADOPT_MIST_CLAIM_FIELD).
-  3. Also flips a boolean "enable"/"enabled" key if present, on the
-     assumption that onboarding requires the feature to be turned on.
-Validate this against a real switch (or updated vendor docs) and adjust
-config.MIST_CLAIM_FIELD / the logic below if the discovered schema differs.
+Confirmed contract (2026-09-09, verified live against real hardware — see
+CLAUDE.md for the full investigation):
+
+  PUT https://{IP}/rest/{version}/system/mist
+  Content-Type: application/json
+  { "registration_code": "<CODE>" }
+
+(equivalent to the CLI command `mist registration-code <CODE>`). The
+official HPE AOS-CX 10.18.xxxx Fundamentals Guide's own curl example shows
+`-X POST` for this call — that was this module's original implementation,
+but live testing against real hardware found POST returns HTTP 405 "Not
+Allowed" **from nginx itself** (i.e. the path isn't wired up for POST at
+all at the switch's reverse-proxy layer, not an AOS-CX-level rejection),
+while PUT succeeds (200, with the written value reflected back on a
+follow-up GET). This was confirmed on a switch already verified to be in a
+clean, unregistered state (ruling out "already registered" as the 405's
+cause) — so the doc's POST example appears to simply not match this
+firmware's actual REST routing. If this needs revisiting on a different
+firmware version, that's the first thing to re-check.
+
+This also replaces an earlier, incorrect guess (writing into a
+`system.aruba_central.activation_key` field via GET+PUT) that this module
+used before the real field/endpoint was confirmed against official
+documentation. Per that same doc, the registration code itself is *not*
+persisted in running/startup-config and is automatically cleared from the
+switch after successful use — the create_checkpoint() ("write memory")
+call below is kept anyway to match this app's stated "saved to
+startup-config" behavior for whatever else may be in running-config, but
+is not what makes the registration code durable (the switch's own
+persistent, post-registration state is what survives).
 """
 from __future__ import annotations
 
@@ -52,23 +66,21 @@ from . import config
 
 logger = logging.getLogger("adopt.cx_client")
 
-_ENABLE_KEY_CANDIDATES = ("enable", "enabled")
-
 
 class CxClientError(Exception):
     """Raised for any AOS-CX switch failure (auth, network, push, or save)."""
 
 
-def push_adoption_code(
+def push_registration_code(
     ip: str,
     username: str,
     password: str,
-    claim_code: str,
+    registration_code: str,
     api_version: str | None = None,
     scheme: str = "https",
 ) -> None:
-    """Log into the switch at `ip`, write `claim_code` into
-    system.aruba_central, then persist it via a checkpoint (write memory).
+    """Log into the switch at `ip`, PUT `registration_code` to
+    system/mist, then persist via a checkpoint (write memory).
 
     `ip` may be "host" or "host:port" (the latter used by the local mock
     switch server in mock/mock_switch.py). `scheme` defaults to "https" for
@@ -80,7 +92,7 @@ def push_adoption_code(
     api_version = api_version or config.DEFAULT_AOSCX_API_VERSION
     session = Session(ip, api_version)
     # pyaoscx.Session.__init__ hardcodes scheme="https" and bakes it into
-    # base_url immediately. session.request() (GET/PUT) reads .scheme
+    # base_url immediately. session.request() (GET/PUT/POST) reads .scheme
     # dynamically, but our own _login()/close() need base_url rebuilt too.
     session.scheme = scheme
     session.base_url = f"{scheme}://{ip}/{session.version_path}"
@@ -92,40 +104,19 @@ def push_adoption_code(
 
     try:
         try:
-            get_response = session.request(
-                "GET", "system", params={"attributes": "aruba_central"}
-            )
-        except Exception as exc:
-            raise CxClientError(f"Could not read system state from {ip}: {exc}") from exc
-
-        if get_response.status_code != 200:
-            raise CxClientError(
-                f"Could not read system state from {ip} "
-                f"(HTTP {get_response.status_code}): {get_response.text[:500]}"
-            )
-
-        current = dict(get_response.json().get("aruba_central") or {})
-        logger.info("Switch %s current aruba_central keys: %s", ip, sorted(current.keys()))
-
-        updated = dict(current)
-        updated[config.MIST_CLAIM_FIELD] = claim_code
-        for enable_key in _ENABLE_KEY_CANDIDATES:
-            if enable_key in updated:
-                updated[enable_key] = True
-
-        try:
             response = session.request(
                 "PUT",
-                "system",
-                params={"attributes": "aruba_central"},
-                data=json.dumps({"aruba_central": updated}),
+                "system/mist",
+                data=json.dumps({config.MIST_REGISTRATION_FIELD: registration_code}),
             )
         except Exception as exc:
-            raise CxClientError(f"Pushing adoption code to {ip} failed: {exc}") from exc
-
-        if response.status_code not in (200, 204):
             raise CxClientError(
-                f"Switch {ip} rejected the adoption code "
+                f"Pushing registration code to {ip} failed: {exc}"
+            ) from exc
+
+        if response.status_code not in (200, 201, 204):
+            raise CxClientError(
+                f"Switch {ip} rejected the registration code "
                 f"(HTTP {response.status_code}): {response.text[:500]}"
             )
 
