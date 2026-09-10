@@ -1,68 +1,58 @@
 {% extends "base.html" %}
-{% block title %}Dashboard · ADOPT{% endblock %}
+{% block title %}Clear Registration · ADOPT{% endblock %}
 {% block content %}
 
 <div class="page-head">
-  <h1>Adopt CX Switches</h1>
+  <h1>Clear Mist Registration</h1>
 </div>
 
 <p class="muted" style="margin-top:-10px">
-  Enter the Mist org and AOS-CX credentials below, plus the switches to adopt.
-  ADOPT will pull one Mist adoption code per switch, then push each code
-  straight to its switch and save it to startup-config.
+  Undo an accidental adoption: SSH into each switch and run
+  <code>clear mist registration-info</code>, which makes it unmanageable by
+  Mist again. This does not remove the switch's entry from the Mist org's
+  inventory — that's a quick action in the Mist portal (Organization &rarr;
+  Inventory) once you've cleared the switches themselves here.
 </p>
+
+<div class="alert warning">
+  This is destructive on the switch side: it clears the switch's local Mist
+  registration state. Double-check the IP list below before running it.
+</div>
 
 {% if error %}
 <div class="alert error">{{ error }}</div>
 {% endif %}
 
-<form method="post" action="{{ rp }}/adopt" class="card">
-  <h2>Mist org</h2>
-  <div class="field-grid">
-    <label>Mist API host
-      <input type="text" name="mist_host" value="{{ mist_host }}" placeholder="api.mist.com" required>
-      <span class="hint">Use your region's host, e.g. api.eu.mist.com.</span>
-    </label>
-    <label>Org ID
-      <input type="text" name="org_id" value="{{ org_id or '' }}" placeholder="00000000-0000-0000-0000-000000000000" required>
-    </label>
-    <label class="full">Mist API token
-      <input type="password" name="mist_token" placeholder="Mist org API token" required autocomplete="off">
-      <span class="hint">Used only for this run — never stored.</span>
-    </label>
-  </div>
-
-  <h2 style="margin-top:24px">AOS-CX switch credentials</h2>
+<form method="post" action="{{ rp }}/rollback" class="card">
+  <h2>AOS-CX switch credentials</h2>
   <div class="field-grid">
     <label>Username
-      <input type="text" name="cx_username" value="{{ cx_username or '' }}" placeholder="admin" required autocomplete="off">
+      <input type="text" name="ssh_username" value="{{ ssh_username or '' }}" placeholder="admin" required autocomplete="off">
     </label>
     <label>Password
-      <input type="password" name="cx_password" placeholder="Switch admin password" required autocomplete="off">
+      <input type="password" name="ssh_password" placeholder="Switch admin password" required autocomplete="off">
       <span class="hint">Used only for this run — never stored.</span>
     </label>
   </div>
 
-  <h2 style="margin-top:24px">Switches to adopt</h2>
+  <h2 style="margin-top:24px">Switches to clear</h2>
   <label class="full">Switch IP addresses
     <textarea class="ip-list" id="switch-ips" name="switch_ips" placeholder="10.0.0.11&#10;10.0.0.12&#10;10.0.0.13" required>{{ switch_ips or '' }}</textarea>
-    <span class="hint">One IP per line (or comma-separated). One Mist adoption code will be requested per switch.</span>
+    <span class="hint">One IP per line (or comma-separated).</span>
   </label>
   <label class="full">Or upload a file of switch IPs
     <input type="file" id="ip-file-upload" accept=".txt,.csv">
-    <span class="hint">A plain text or CSV file with one IP per line (or comma-separated) — replaces whatever is in the box above. Handy for bulk lists (e.g. 100 switches) instead of typing them all in.
+    <span class="hint">A plain text or CSV file with one IP per line (or comma-separated) — replaces whatever is in the box above.
       <a class="sample-download-link" href="{{ rp }}/assets/sample_switches.txt" download>Download a sample file</a> to see the expected format.</span>
     <span class="hint" id="ip-file-feedback"></span>
   </label>
 
   <div class="form-actions">
-    <button class="btn" type="submit">Adopt</button>
+    <button class="btn" type="submit">Clear registration on these switches</button>
   </div>
 </form>
 
-<p class="job-summary" style="margin-top:16px">
-  Adopted the wrong switches by mistake? <a href="{{ rp }}/rollback">Clear registration on switches &rarr;</a>
-</p>
+<p class="job-summary" style="margin-top:16px"><a href="{{ rp }}/">&larr; back to adopt</a></p>
 
 {% endblock %}
 {% block scripts %}

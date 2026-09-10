@@ -79,3 +79,52 @@ class SwitchResult(Base):
     )
 
     job: Mapped[AdoptionJob] = relationship(back_populates="switches")
+
+
+class ClearJob(Base):
+    """A run of the 'clear registration' rollback flow — undoes an
+    accidental bulk adoption by SSHing into each switch and running
+    `clear mist registration-info` (see app/ssh_client.py). Deliberately
+    separate from AdoptionJob: this flow needs no Mist API access at all
+    (no host/org/token), only switch SSH credentials."""
+
+    __tablename__ = "clear_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=_now, onupdate=_now
+    )
+    switch_count: Mapped[int] = mapped_column(Integer, default=0)
+    # pending -> running -> complete | complete_with_errors
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    switches: Mapped[list["ClearSwitchResult"]] = relationship(
+        back_populates="job",
+        cascade="all, delete-orphan",
+        order_by="ClearSwitchResult.order_index",
+    )
+
+
+class ClearSwitchResult(Base):
+    """Per-switch outcome for one clear-registration run, in dashboard
+    IP-list order. `message` holds the raw SSH command output (or error) —
+    see app/ssh_client.py's module docstring for why this isn't parsed
+    into a stricter success/failure signal beyond connect/auth success."""
+
+    __tablename__ = "clear_switch_results"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("clear_jobs.id"))
+    order_index: Mapped[int] = mapped_column(Integer)
+    ip: Mapped[str] = mapped_column(String(64))
+    # pending -> running -> success | failed
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=_now, onupdate=_now
+    )
+
+    job: Mapped[ClearJob] = relationship(back_populates="switches")
+

@@ -9,6 +9,9 @@ textarea.ip-list { min-height: 160px; font-family: ui-monospace, SFMono-Regular,
 
 .form-actions { margin-top: 22px; display: flex; align-items: center; gap: 14px; }
 
+.sample-download-link { color: var(--hpe-green-dark); font-weight: 600; }
+.sample-download-link:hover { text-decoration: underline; }
+
 /* ---- switch adoption status pills ---- */
 .status-badge.status-pending { background: var(--surface2); color: var(--muted); }
 .status-badge.status-adopting { background: rgba(59, 130, 246, .2); color: #7db1ff; }
@@ -28,3 +31,8 @@ textarea.ip-list { min-height: 160px; font-family: ui-monospace, SFMono-Regular,
 .progress-bar-fill { background: var(--hpe-green); height: 100%; border-radius: 999px; transition: width .3s ease; }
 .progress-label { font-size: .85rem; color: var(--muted); margin-top: 8px; }
 .run-summary { font-size: 1rem; margin: 0; }
+
+/* ---- rollback (clear registration) status pills ---- */
+.status-badge.status-running { background: rgba(59, 130, 246, .2); color: #7db1ff; }
+
+.alert.warning { background: rgba(245, 158, 11, .16); color: #f5b13c; border: 1px solid rgba(245, 158, 11, .4); font-weight: 600; }

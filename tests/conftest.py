@@ -84,6 +84,26 @@ def make_mock_switch():
         h.stop()
 
 
+@pytest.fixture
+def make_mock_ssh_switch():
+    """Real mock SSH server (paramiko server-side, not a mocked client) —
+    see mock/mock_ssh_switch.py."""
+    servers = []
+
+    def _make(**kwargs):
+        from mock_ssh_switch import MockSshSwitch
+
+        server = MockSshSwitch(**kwargs)
+        server.start()
+        servers.append(server)
+        return server
+
+    yield _make
+
+    for s in servers:
+        s.stop()
+
+
 @pytest.fixture(autouse=True)
 def _fresh_schema():
     """Recreate tables per test so each test starts with an empty db."""

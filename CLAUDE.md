@@ -20,6 +20,12 @@ that got nailed down and what was ruled out along the way).
   switches concurrently. Has a `_code_assignment_lock` guarding the
   "claim the oldest unused code" step — remove it and tests will flake
   (two threads can otherwise grab the same code before either commits).
+- `app/ssh_client.py` + `app/clear_worker.py`: the rollback flow (undo an
+  accidental bulk adoption) — SSHes into each switch (paramiko) and runs
+  `clear mist registration-info`, since AOS-CX's REST `/cli` endpoint
+  can't run config-changing commands at all (confirmed live — see below).
+  Deliberately separate from the adopt flow's models/worker since it needs
+  no Mist API access, just switch SSH credentials.
 
 ## Local dev / verify
 - `.venv` in this repo (gitignored). `pip install -r requirements-dev.txt`.

@@ -9,7 +9,8 @@ from fastapi.templating import Jinja2Templates
 
 from . import config
 from .db import SessionLocal, get_db, init_db
-from .models import AdoptionJob, SwitchResult
+from .models import AdoptionJob, ClearJob, ClearSwitchResult, SwitchResult
+from .clear_worker import start_clear_job_thread
 from .worker import start_job_thread
 
 
@@ -134,6 +135,74 @@ def create_app() -> FastAPI:
                     "message": s.message,
                     "registration_code_used": s.registration_code_used,
                 }
+                for s in sorted(job.switches, key=lambda s: s.order_index)
+            ],
+        }
+
+    @app.get("/rollback")
+    def rollback_form(request: Request):
+        return templates.TemplateResponse(
+            request, "rollback.html", _tmpl_ctx(request, error=None)
+        )
+
+    @app.post("/rollback")
+    def rollback(
+        request: Request,
+        ssh_username: str = Form(...),
+        ssh_password: str = Form(...),
+        switch_ips: str = Form(...),
+        db=Depends(get_db),
+    ):
+        ips = _parse_ips(switch_ips)
+        if not ips:
+            return templates.TemplateResponse(
+                request,
+                "rollback.html",
+                _tmpl_ctx(
+                    request,
+                    ssh_username=ssh_username,
+                    error="Enter at least one switch IP address.",
+                ),
+                status_code=400,
+            )
+
+        job = ClearJob(switch_count=len(ips), status="pending")
+        db.add(job)
+        db.flush()  # assign job.id
+
+        for i, ip in enumerate(ips):
+            db.add(ClearSwitchResult(job_id=job.id, order_index=i, ip=ip, status="pending"))
+        db.commit()
+
+        start_clear_job_thread(
+            job.id,
+            ssh_username=ssh_username,
+            ssh_password=ssh_password,
+        )
+
+        return RedirectResponse(f"{config.ROOT_PATH}/rollback/jobs/{job.id}", status_code=303)
+
+    @app.get("/rollback/jobs/{job_id}")
+    def rollback_job_status(request: Request, job_id: int, db=Depends(get_db)):
+        job = db.get(ClearJob, job_id)
+        if job is None:
+            return RedirectResponse(f"{config.ROOT_PATH}/rollback", status_code=303)
+        return templates.TemplateResponse(
+            request, "rollback_job_status.html", _tmpl_ctx(request, job=job)
+        )
+
+    @app.get("/rollback/jobs/{job_id}/data")
+    def rollback_job_data(job_id: int, db=Depends(get_db)):
+        job = db.get(ClearJob, job_id)
+        if job is None:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        return {
+            "id": job.id,
+            "status": job.status,
+            "error_message": job.error_message,
+            "switch_count": job.switch_count,
+            "switches": [
+                {"ip": s.ip, "status": s.status, "message": s.message}
                 for s in sorted(job.switches, key=lambda s: s.order_index)
             ],
         }

@@ -99,7 +99,39 @@ Also note: `app/cx_client.py` deliberately does **not** use pyaoscx's
 first `Device(session)` call in the process permanently wins; every later
 call for a different switch's session silently returns that same cached
 instance. Since ADOPT pushes to several switches concurrently, `Device` is
-bypassed in favor of a plain `session.request()` POST.
+bypassed in favor of a plain `session.request()` PUT.
+
+## Rollback: clearing registration on the wrong switches
+
+Adopted the wrong batch of switches by mistake (e.g. 50 switches, and the
+wrong 50 got Mist codes pushed to them)? The **Clear Mist Registration**
+page (linked from the dashboard) undoes the switch side of that: for each
+IP you give it, ADOPT SSHes in and runs `clear mist registration-info`,
+which makes the switch unmanageable by Mist again.
+
+```
+ssh {username}@{IP}
+clear mist registration-info
+```
+
+This is a real SSH session (via `paramiko`), not a REST call — AOS-CX's
+REST `/cli` troubleshooting endpoint only permits a narrow allowlist of
+read-only "show" commands (confirmed live: it 403s on non-"show" commands,
+including `mist registration-code ...`), so a config-changing command like
+this can't go through REST at all. See `app/ssh_client.py`'s module
+docstring for the full reasoning, including why it uses an interactive
+shell channel rather than paramiko's `exec_command()`.
+
+This only clears the switch's *local* registration state — it does not
+remove the switch's entry from the Mist org's inventory. That's
+intentionally out of scope here (it's a quick action in the Mist portal,
+Organization → Inventory) — this flow exists specifically to make a
+wrongly-adopted batch stop being manageable by Mist immediately, without
+needing to touch the Mist org at all.
+
+Like the adopt flow, failures (wrong firmware, wrong credentials,
+unreachable, etc.) don't stop the run — each switch is independent, and a
+"Failed switches" list shows what went wrong once the run finishes.
 
 ## Local dev / verify
 
@@ -113,9 +145,11 @@ Tests run the *actual* Mist client and pyaoscx code against real (not
 mocked-away) HTTP servers — see `mock/mock_mist.py` (mints a fresh,
 unique registration code per call, matching the real API's confirmed
 behavior) and `mock/mock_switch.py` (a minimal but real AOS-CX REST API
-simulator: login/logout, `system/mist` GET/POST, `fullconfigs` for the
+simulator: login/logout, `system/mist` GET/PUT, `fullconfigs` for the
 write-memory checkpoint). `mock/mock_switch.py` is adapted from
-`../aos-cx-lab/sim/main.py`'s login/session pattern.
+`../aos-cx-lab/sim/main.py`'s login/session pattern. `mock/mock_ssh_switch.py`
+is a real paramiko server-side SSH mock (not a mocked client) for the
+rollback flow's tests — see `app/ssh_client.py`.
 
 To run the app itself against the mocks instead of real infrastructure:
 
@@ -154,17 +188,25 @@ Serves on `$ADOPT_PORT` (default 9099). See `.env.example` for all knobs.
 
 ```
 app/
-  main.py          FastAPI routes: dashboard, /adopt, /jobs/{id}, /jobs/{id}/data
+  main.py          FastAPI routes: dashboard, /adopt, /jobs/{id}, /jobs/{id}/data,
+                    /rollback, /rollback/jobs/{id}, /rollback/jobs/{id}/data
   config.py        env-driven settings
-  db.py / models.py  temp SQLite db: AdoptionJob, AdoptionCode, SwitchResult
+  db.py / models.py  temp SQLite db: AdoptionJob, AdoptionCode, SwitchResult,
+                    ClearJob, ClearSwitchResult
   mist_client.py   Mist registration-code minting (one GET per switch)
   cx_client.py     pyaoscx login + system/mist push + write-memory checkpoint
-  worker.py        background thread orchestrating one run
-  templates/, static/   dashboard + job-status UI (shares holo/focus/vista's
-                         style.css token system — see DESIGN.md in those repos)
+  ssh_client.py    paramiko SSH client for the rollback flow (clear mist
+                    registration-info)
+  worker.py        background thread orchestrating one adoption run
+  clear_worker.py  background thread orchestrating one rollback run
+  templates/, static/   dashboard + job-status + rollback UI (shares
+                         holo/focus/vista's style.css token system — see
+                         DESIGN.md in those repos)
 mock/
-  mock_mist.py     fake Mist registration-code server, for tests + local dev
-  mock_switch.py   fake AOS-CX switch REST API, for tests + local dev
+  mock_mist.py       fake Mist registration-code server, for tests + local dev
+  mock_switch.py     fake AOS-CX switch REST API, for tests + local dev
+  mock_ssh_switch.py fake AOS-CX switch SSH server, for tests + local dev
 tests/
-  test_mist_client.py, test_cx_client.py, test_integration.py
+  test_mist_client.py, test_cx_client.py, test_integration.py,
+  test_ssh_client.py, test_clear_integration.py
 ```
